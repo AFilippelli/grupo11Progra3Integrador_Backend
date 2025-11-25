@@ -2,14 +2,39 @@
 import express from "express"; //importamos el framework Express
 import connection from "./src/api/database/db.js"; //importamos la conexion a la base de datos
 import environments from "./src/api/config/environments.js"; //importamos las variables de entorno
-
+import cors from "cors"; //importamos el modulo CORS
 
 const app = express();
 const PORT = environments.port;
 
+
+//Middlewares
+//middleware CORS basico que permite todas las solicitudes
+app.use(cors());
+
+app.use(express.json()); //Middleware para parsear JSON en el body a objetos
+
+app.use((req, res, next) => {
+    console.log(`[${new Date().toLocaleString()}]   ${req.method} ${req.url}`);
+    //si no llamamos a next, la coneccion se queda aca, next permite seguir procesando la operacion
+    next();
+})
+
 //Endpoints
+
+/*CRUD (Create Read Update Delete)
+
+    - CREATE -> POST
+    - READ -> GET
+    - UPDATE -> PUT
+    - DELETE -> DELETE
+    
+*/
+
+//Get products -> Traer todos los productos
 app.get("/productos", async (req, res) => {
     try{
+
         const sql = `SELECT * FROM productos`;
         const [rows] = await connection.query(sql);
         console.log(rows);
@@ -28,6 +53,119 @@ app.get("/productos", async (req, res) => {
     }
 });
 
+//Get product by id -> Consultar productos por su id
+app.get("/productos/:id", async (req, res) => {
+    try{
+        //obtenemos el valor numerico despues de products: /products/2
+        let { id } = req.params;
+
+        //los ? representan los placeholder que utilizamos para evitar las inyecciones SQL
+        let sql = `SELECT * FROM productos where id = ?`;
+        const [rows] = await connection.query(sql, [id]); //el id reemplaza el ?
+
+        res.status(200).json({
+            payload: rows
+        });
+
+    } catch(error){
+        console.error("Error obteniendo producto con id", error.message);
+
+        res.status(500).json({
+            error:"Error interno al obtener un producto con id"
+        })
+    }
+})
+
+//Crear producto
+app.post("/productos", async (req, res) => {
+    try{
+        const { nombre, precio, tipo, img_url } = req.body;
+        console.log(req.body);
+        
+        //Optimizacion de validacion de datos de entrada
+        if(!nombre || !precio || !tipo || !img_url){
+            //el return hace que el endpoint termine aca
+            return res.status(400).json({
+                message: "Datos invalidos, completa todos los campos del formulario"
+            });
+        }
+
+        //los placeholders (?) evitan inyecciones SQL
+        let sql = "INSERT INTO productos (nombre, precio, tipo, img_url) VALUES (?, ?, ?, ?)"
+
+        //Enviamos estos valores a la base de datos
+        let [rows] = await connection.query(sql, [nombre, precio, tipo, img_url]);
+        console.log(rows);
+
+        //Devolvemos una respuesta 201 "Created"
+        res.status(201).json({
+            message: "Producto creado con exito",
+            productId: rows.insertId
+        });
+
+    } catch(error){
+        console.error("Error interno del servidor");
+
+        res.status(500).json({
+            message:"Error interno del servidor",
+            error: error.message
+        });
+    }
+});
+
+
+//Actualizar un producto
+app.put("/productos", async (req, res) => {
+    try{
+        let { id, nombre, precio, tipo, img_url, activo} = req.body;
+
+        let sql = `
+            UPDATE productos
+            SET nombre = ?, precio = ?, tipo = ?, img_url = ?
+            WHERE id = ?
+        `;
+
+        let [result] = await connection.query(sql, [nombre, precio, tipo, img_url, id])
+        console.log(result);
+
+        res.status(200).json({
+            message: "Producto actualizado correctamente"
+        })
+
+    }catch(error){
+        console.error("Error al actualizar el producto: ", error);
+
+        res.status(500).json({
+            message:"Error interno del servidor",
+            error: error.message
+        })
+    }
+});
+
+//Eliminar producto
+app.delete("/productos/:id", async(req,res) => {
+    try{
+        let { id } = req.params;
+
+        let sql = "DELETE FROM productos WHERE id = ?";
+
+        let [result] = await connection.query(sql, [id]);
+        console.log(result);
+
+        return res.status(200).json({
+            message:`Producto con id ${id} eliminado correctamente`
+        });
+
+    }catch (error){
+        console.log(`Error al eliminar un producto con id ${id}: `, error);
+
+        res.status(500).json({
+            message: `Error al eliminar un producto con id ${id}`,
+            error: error.message
+        })
+    }
+})
+
 app.listen(PORT, () => {
     console.log(`Servidor corriendo en el puerto ${PORT}`);
-})
+});
